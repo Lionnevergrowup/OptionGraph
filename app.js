@@ -188,7 +188,12 @@ async function loadTicker(input) {
     .toUpperCase()
     .replace(/[^A-Z0-9._]/g, "");
   if (!symbol) {
-    if (input.trim()) setStatus("请输入有效的美股代码(英文字母,如 AAPL)。", true);
+    setStatus(
+      input.trim()
+        ? "请输入有效的美股代码(英文字母,如 AAPL)。"
+        : "请先输入股票代码,或点击下方的快捷标签。",
+      true
+    );
     return;
   }
   const seq = ++loadSeq; // 防止连续查询时慢的旧响应覆盖新结果
@@ -209,6 +214,7 @@ async function loadTicker(input) {
     if (seq !== loadSeq) return;
 
     const d = json.data;
+    if (!(d.current_price > 0)) throw new Error("该标的暂无现价数据(可能已停牌)");
     const byExpiry = parseOptions(d.options);
     const expiries = [...byExpiry.keys()].sort().filter((e) => daysToExpiry(e) >= 0);
     if (expiries.length === 0) throw new Error("该代码没有可用的期权报价");
@@ -254,7 +260,9 @@ async function loadTicker(input) {
       ? "未找到该代码的期权数据,请确认是有美股期权的标的"
       : /HTTP 429/.test(e.message)
         ? "数据通道暂时繁忙,请等几秒再试"
-        : `${e.message || e},稍后再试`;
+        : e instanceof TypeError || e.name === "AbortError"
+          ? "网络连接失败,请检查网络后重试"
+          : `${e.message || e},稍后再试`;
     setStatus(`加载 ${symbol} 失败:${reason}。`, true);
   } finally {
     if (seq === loadSeq) el.loadBtn.disabled = false;
