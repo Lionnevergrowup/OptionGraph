@@ -271,6 +271,7 @@ async function loadTicker(input) {
       expiries[0];
     el.expiry.disabled = false;
 
+    history.replaceState(null, "", `#${state.symbol}`);
     setStatus("");
     render();
   } catch (e) {
@@ -401,12 +402,34 @@ function render() {
 
   const fmt$ = (n) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
   const RANK = ["★ 最优", "次优", "第三"];
-  el.bestInfo.innerHTML = top3
-    .map(
-      (p, i) =>
-        `<span class="${i === 0 ? "rank-top" : "rank"}">${RANK[i]}</span> 行权 ${fmt$(p.x)}:期权价 ${fmt$(p.mid)},杠杆 ${p.y.toFixed(1)}×`
-    )
-    .join("<br>");
+  const lines = top3.map(
+    (p, i) =>
+      `<span class="${i === 0 ? "rank-top" : "rank"}">${RANK[i]}</span> 行权 ${fmt$(p.x)}:期权价 ${fmt$(p.mid)},杠杆 ${p.y.toFixed(1)}×`
+  );
+
+  // 扫描其他到期日:同样行权价范围内若有杠杆明显更高的合约,给出可点击的提示。
+  // 注意越近到期杠杆天然越高,但归零风险也越大,提示里说明白
+  if (top3[0]) {
+    let gBest = null;
+    let gIso = null;
+    for (const eIso of state.byExpiry.keys()) {
+      if (eIso === iso || daysToExpiry(eIso) < 0) continue;
+      for (const p of buildSeries(state.byExpiry.get(eIso), "C", lo, hi)) {
+        if (p.oi >= 1 && (!gBest || p.y > gBest.y)) {
+          gBest = p;
+          gIso = eIso;
+        }
+      }
+    }
+    if (gBest && gBest.y > top3[0].y * 1.05) {
+      lines.push(
+        `<span class="rank">提示</span> ${gIso}(剩 ${daysToExpiry(gIso)} 天)到期的行权 ${fmt$(gBest.x)} 杠杆 ${gBest.y.toFixed(1)}× 更高` +
+          `(越近到期杠杆越高、归零风险也越大)<button class="linklike" data-jump="${gIso}">切换查看</button>`
+      );
+    }
+  }
+
+  el.bestInfo.innerHTML = lines.join("<br>");
   el.bestInfo.hidden = !el.bestInfo.innerHTML;
 
   const text = cssVar("--text");
@@ -506,5 +529,22 @@ if (savedRange && [...el.range.options].some((o) => o.value === savedRange)) {
   el.range.value = savedRange;
 }
 
+// 「切换查看」跳转到提示的到期日
+el.bestInfo.addEventListener("click", (e) => {
+  const iso = e.target.dataset && e.target.dataset.jump;
+  if (!iso) return;
+  el.expiry.value = iso;
+  store.set("og.expiry", iso);
+  render();
+});
+
 // 深色/浅色模式切换时重绘
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+
+// 网址直达:打开 …/#TSLA 自动查询;查询成功后把代码写回地址栏方便收藏
+function applyHash() {
+  const h = decodeURIComponent(location.hash.slice(1)).trim().toUpperCase();
+  if (h && (!state || h !== state.symbol)) loadTicker(h);
+}
+window.addEventListener("hashchange", applyHash);
+applyHash();
