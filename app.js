@@ -22,17 +22,24 @@ async function fetchText(url, init) {
   }
 }
 
+function rangeChunk(url, idx) {
+  const start = idx * CHUNK;
+  return fetchText(url, {
+    headers: { Range: `bytes=${start}-${start + CHUNK - 1}` },
+  });
+}
+
 async function fetchChunked(url) {
-  // 大链(如 SPX ≈14MB)需要十几块,每批 4 块并行,最多 6 批 ≈21.6MB
-  let text = "";
-  for (let batch = 0; batch < 6; batch++) {
+  // 先单独取第一块(普通个股 2~3 块即全;也避免一上来高并发触发代理限流),
+  // 大链(如 SPX ≈14MB)再以每批 3 块续传,上限 25 块 ≈22.5MB
+  let text = await rangeChunk(url, 0);
+  if (text.length < CHUNK) return text;
+  for (let batch = 0; batch < 8; batch++) {
     const parts = await Promise.all(
-      [0, 1, 2, 3].map((i) => {
-        const start = (batch * 4 + i) * CHUNK;
-        return fetchText(url, {
-          headers: { Range: `bytes=${start}-${start + CHUNK - 1}` },
-        }).catch(() => ""); // 超出文件末尾的块返回 416,视为结束
-      })
+      [0, 1, 2].map((i) =>
+        // 超出文件末尾的块返回 416,视为结束
+        rangeChunk(url, 1 + batch * 3 + i).catch(() => "")
+      )
     );
     for (const part of parts) {
       text += part;
@@ -86,21 +93,25 @@ async function chunkedWithRetry(url) {
 }
 
 async function fetchJSON(url) {
-  // 第一梯队:直连与两个主代理并发竞速,谁先返回合法 JSON 用谁
+  // 第一梯队:直连与主代理(corsproxy 透传上游状态码)竞速
+  let proxyErr;
   try {
     return await Promise.any([
       fetchText(url).then(validate),
-      fetchText(`https://proxy.corsfix.com/?${url}`).then(validate),
-      chunkedWithRetry(`https://corsproxy.io/?url=${encodeURIComponent(url)}`),
+      chunkedWithRetry(`https://corsproxy.io/?url=${encodeURIComponent(url)}`).catch(
+        (e) => {
+          proxyErr = e;
+          throw e;
+        }
+      ),
     ]);
   } catch (e) {
-    const errs = e.errors || [e];
-    // 代理明确返回 403/404 说明标的不存在,无需再试备用代理
-    if (errs.some((x) => /HTTP (403|404)/.test(x.message))) {
+    // 主代理透传的 403/404 说明标的不存在,无需再试备用代理
+    if (proxyErr && /HTTP (403|404)/.test(proxyErr.message)) {
       throw new Error("HTTP 404");
     }
     // 第二梯队:备用代理依次尝试
-    let lastErr = errs[errs.length - 1];
+    let lastErr = proxyErr || e;
     for (const proxied of [
       `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
       `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
@@ -111,6 +122,8 @@ async function fetchJSON(url) {
         lastErr = e2;
       }
     }
+    // 限流信息比备用代理的杂项错误更有指导意义,优先抛出
+    if (proxyErr && /HTTP 429/.test(proxyErr.message)) throw proxyErr;
     throw lastErr || new Error("网络请求失败");
   }
 }
@@ -167,12 +180,16 @@ async function loadTicker(input) {
   setStatus(`正在加载 ${symbol} 的期权数据…`);
 
   try {
-    // 指数(如 SPX、VIX)在 Cboe 接口里以下划线开头;两种形式并发竞速,谁成功用谁
-    const candidates =
-      /^[A-Z]+$/.test(symbol) ? [symbol, `_${symbol}`] : [symbol];
-    const json = await Promise.any(
-      candidates.map((s) => fetchJSON(`${CBOE_BASE}${encodeURIComponent(s)}.json`))
-    ).catch((e) => {
+    // 指数(如 SPX、VIX)在 Cboe 接口里以下划线开头;指数形式延迟半拍起跑,
+    // 既不拖慢个股查询,也避免每次查询都翻倍消耗代理配额
+    const tryForm = (s) => fetchJSON(`${CBOE_BASE}${encodeURIComponent(s)}.json`);
+    const attempts = [tryForm(symbol)];
+    if (/^[A-Z]+$/.test(symbol)) {
+      attempts.push(
+        new Promise((r) => setTimeout(r, 350)).then(() => tryForm(`_${symbol}`))
+      );
+    }
+    const json = await Promise.any(attempts).catch((e) => {
       throw e.errors ? e.errors[0] : e;
     });
 
@@ -216,9 +233,11 @@ async function loadTicker(input) {
   } catch (e) {
     if (seq !== loadSeq) return;
     console.error(e);
-    const reason = /HTTP 4\d\d/.test(e.message)
+    const reason = /HTTP (403|404)/.test(e.message)
       ? "未找到该代码的期权数据,请确认是有美股期权的标的"
-      : `${e.message || e},稍后再试`;
+      : /HTTP 429/.test(e.message)
+        ? "数据通道暂时繁忙,请等几秒再试"
+        : `${e.message || e},稍后再试`;
     setStatus(`加载 ${symbol} 失败:${reason}。`, true);
   } finally {
     if (seq === loadSeq) el.loadBtn.disabled = false;
