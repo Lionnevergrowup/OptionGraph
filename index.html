@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="期权杠杆可视化 — 股价每涨1%,期权价格涨百分之几">
+  <title>OptionGraph · 期权杠杆可视化</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <h1>📈 OptionGraph</h1>
+      <p class="subtitle">期权杠杆可视化 — 股价每涨 1%,期权价格涨多少 %</p>
+    </header>
+
+    <section class="card controls">
+      <div class="field">
+        <label for="ticker">股票代码 Ticker</label>
+        <div class="ticker-row">
+          <input type="text" id="ticker" placeholder="例如 AAPL" autocapitalize="characters"
+                 autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+          <button id="load-btn" type="button">查询</button>
+        </div>
+        <div class="chips" id="chips">
+          <button class="chip" data-t="AAPL">AAPL</button>
+          <button class="chip" data-t="TSLA">TSLA</button>
+          <button class="chip" data-t="NVDA">NVDA</button>
+          <button class="chip" data-t="MSFT">MSFT</button>
+          <button class="chip" data-t="SPY">SPY</button>
+          <button class="chip" data-t="QQQ">QQQ</button>
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="expiry">到期日 Expiration</label>
+          <select id="expiry" disabled><option>先查询股票代码</option></select>
+        </div>
+        <div class="field">
+          <label for="range">行权价范围</label>
+          <select id="range">
+            <option value="0.10">现价 ±10%</option>
+            <option value="0.25" selected>现价 ±25%</option>
+            <option value="0.50">现价 ±50%</option>
+            <option value="999">全部</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section id="status" class="status" hidden></section>
+
+    <section id="quote" class="card quote" hidden>
+      <div class="quote-main">
+        <span class="quote-symbol" id="q-symbol"></span>
+        <span class="quote-price" id="q-price"></span>
+        <span class="quote-change" id="q-change"></span>
+      </div>
+      <div class="quote-meta" id="q-meta"></div>
+    </section>
+
+    <section id="chart-card" class="card chart-card" hidden>
+      <h2 id="chart-title"></h2>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
+      <p class="hint">点击图例可隐藏/显示 Call 或 Put · 触摸曲线查看明细</p>
+    </section>
+
+    <footer class="foot">
+      <p>杠杆倍数 ≈ 现价 ÷ 期权中间价 × Delta(Put 取绝对值,方向相反)</p>
+      <p>数据来源:<a href="https://www.cboe.com/delayed_quotes/" target="_blank" rel="noopener">Cboe 延迟行情</a>(约延迟 15 分钟)· 仅供参考,不构成投资建议</p>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
