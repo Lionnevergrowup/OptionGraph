@@ -156,11 +156,18 @@ function parseOptions(raw) {
 }
 
 // 期权按美东日历日到期;亚洲用户在美股盘中本地日期可能已是“翌日”,
-// 若按本地日期算,当日到期的合约会被误判为已过期,故一律取美东日期
+// 若按本地日期算,当日到期的合约会被误判为已过期,故一律取美东日期。
+// 用 formatToParts 取数,不依赖任何 locale 的日期字符串格式
 const ET_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
 
+function etTodayMs() {
+  const p = {};
+  for (const part of ET_DATE.formatToParts(new Date())) p[part.type] = part.value;
+  return Date.UTC(+p.year, +p.month - 1, +p.day);
+}
+
 function daysToExpiry(iso) {
-  return Math.round((Date.parse(iso) - Date.parse(ET_DATE.format(new Date()))) / 86400000);
+  return Math.round((Date.parse(iso) - etTodayMs()) / 86400000);
 }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -174,8 +181,16 @@ function expiryLabel(iso) {
 let loadSeq = 0;
 
 async function loadTicker(input) {
-  const symbol = input.trim().toUpperCase().replace(/[^A-Z0-9._]/g, "");
-  if (!symbol) return;
+  // 中文输入法常打出全角字母(ＡＡＰＬ),先归一化为半角
+  const symbol = input
+    .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9._]/g, "");
+  if (!symbol) {
+    if (input.trim()) setStatus("请输入有效的美股代码(英文字母,如 AAPL)。", true);
+    return;
+  }
   const seq = ++loadSeq; // 防止连续查询时慢的旧响应覆盖新结果
   el.ticker.value = symbol;
   el.ticker.blur(); // 收起手机键盘,把屏幕留给图表
@@ -212,7 +227,11 @@ async function loadTicker(input) {
     const pct = state.changePct || 0;
     el.qChange.textContent = `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
     el.qChange.className = `quote-change ${pct >= 0 ? "up" : "down"}`;
-    el.qMeta.textContent = `数据时间 ${state.timestamp}(美东,延迟约 15 分钟)`;
+    // Cboe 的 timestamp 是 UTC,转成用户本地时间显示
+    const ts = new Date(state.timestamp.replace(" ", "T") + "Z");
+    el.qMeta.textContent = isNaN(ts)
+      ? `数据时间 ${state.timestamp}(延迟约 15 分钟)`
+      : `数据时间 ${ts.toLocaleString("zh-CN", { hour12: false })}(本地时间,延迟约 15 分钟)`;
     el.quote.hidden = false;
 
     // 到期日下拉框,默认选最近一个 ≥7 天的到期日
@@ -398,7 +417,8 @@ function render() {
 // 事件绑定
 el.loadBtn.addEventListener("click", () => loadTicker(el.ticker.value));
 el.ticker.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") loadTicker(el.ticker.value);
+  // isComposing:输入法选字时的回车不算提交
+  if (e.key === "Enter" && !e.isComposing) loadTicker(el.ticker.value);
 });
 el.chips.addEventListener("click", (e) => {
   const t = e.target.dataset?.t;
