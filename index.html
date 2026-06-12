@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f6fb">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e1320">
   <meta name="description" content="期权杠杆可视化 — 股价每涨1%,期权价格涨百分之几">
   <title>OptionGraph · 期权杠杆可视化</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
@@ -67,7 +69,7 @@
     <section id="chart-card" class="card chart-card" hidden>
       <h2 id="chart-title"></h2>
       <div class="chart-wrap">
-        <canvas id="chart"></canvas>
+        <canvas id="chart" role="img" aria-label="期权杠杆倍数与行权价的折线图"></canvas>
       </div>
       <p class="hint">点击图例可隐藏/显示 Call 或 Put · 触摸曲线查看明细</p>
     </section>

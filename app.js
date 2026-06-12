@@ -12,7 +12,7 @@ const CHUNK = 900000;
 
 async function fetchText(url, init) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20000);
+  const timer = setTimeout(() => ctrl.abort(), 12000);
   try {
     const res = await fetch(url, { ...init, signal: ctrl.signal });
     if (!res.ok && res.status !== 206) throw new Error(`HTTP ${res.status}`);
@@ -23,25 +23,24 @@ async function fetchText(url, init) {
 }
 
 async function fetchChunked(url) {
+  // 大链(如 SPX ≈14MB)需要十几块,每批 4 块并行,最多 6 批 ≈21.6MB
   let text = "";
-  for (let i = 0; i < 8; i++) {
-    const start = i * CHUNK;
-    const part = await fetchText(url, {
-      headers: { Range: `bytes=${start}-${start + CHUNK - 1}` },
-    });
-    text += part;
-    if (part.length < CHUNK) break;
+  for (let batch = 0; batch < 6; batch++) {
+    const parts = await Promise.all(
+      [0, 1, 2, 3].map((i) => {
+        const start = (batch * 4 + i) * CHUNK;
+        return fetchText(url, {
+          headers: { Range: `bytes=${start}-${start + CHUNK - 1}` },
+        }).catch(() => ""); // 超出文件末尾的块返回 416,视为结束
+      })
+    );
+    for (const part of parts) {
+      text += part;
+      if (part.length < CHUNK) return text;
+    }
   }
   return text;
 }
-
-const STRATEGIES = [
-  (u) => fetchText(u),
-  (u) => fetchText(`https://proxy.corsfix.com/?${u}`),
-  (u) => fetchChunked(`https://corsproxy.io/?url=${encodeURIComponent(u)}`),
-  (u) => fetchText(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`),
-  (u) => fetchText(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`),
-];
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -70,25 +69,50 @@ function setStatus(msg, isError = false) {
   el.status.classList.toggle("error", isError);
 }
 
-async function fetchJSON(url) {
-  let lastErr;
-  for (const strategy of STRATEGIES) {
-    try {
-      // Cboe 数据每几秒更新一次,分块拼接偶尔会跨版本导致 JSON 损坏,重试一次
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const json = JSON.parse(await strategy(url));
-          if (json && json.data && Array.isArray(json.data.options)) return json;
-          throw new Error("数据格式异常");
-        } catch (e) {
-          if (attempt === 1 || !(e instanceof SyntaxError)) throw e;
-        }
-      }
-    } catch (e) {
-      lastErr = e;
-    }
+function validate(text) {
+  const json = JSON.parse(text);
+  if (json && json.data && Array.isArray(json.data.options)) return json;
+  throw new Error("数据格式异常");
+}
+
+async function chunkedWithRetry(url) {
+  // Cboe 数据每几秒更新一次,分块拼接偶尔会跨版本导致 JSON 损坏,重试一次
+  try {
+    return validate(await fetchChunked(url));
+  } catch (e) {
+    if (!(e instanceof SyntaxError)) throw e;
+    return validate(await fetchChunked(url));
   }
-  throw lastErr || new Error("网络请求失败");
+}
+
+async function fetchJSON(url) {
+  // 第一梯队:直连与两个主代理并发竞速,谁先返回合法 JSON 用谁
+  try {
+    return await Promise.any([
+      fetchText(url).then(validate),
+      fetchText(`https://proxy.corsfix.com/?${url}`).then(validate),
+      chunkedWithRetry(`https://corsproxy.io/?url=${encodeURIComponent(url)}`),
+    ]);
+  } catch (e) {
+    const errs = e.errors || [e];
+    // 代理明确返回 403/404 说明标的不存在,无需再试备用代理
+    if (errs.some((x) => /HTTP (403|404)/.test(x.message))) {
+      throw new Error("HTTP 404");
+    }
+    // 第二梯队:备用代理依次尝试
+    let lastErr = errs[errs.length - 1];
+    for (const proxied of [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    ]) {
+      try {
+        return validate(await fetchText(proxied));
+      } catch (e2) {
+        lastErr = e2;
+      }
+    }
+    throw lastErr || new Error("网络请求失败");
+  }
 }
 
 // 期权代码如 AAPL260612C00240000 → 到期日 / Call|Put / 行权价
@@ -103,7 +127,8 @@ function parseOptions(raw) {
     const iso = `20${ymd.slice(0, 2)}-${ymd.slice(2, 4)}-${ymd.slice(4, 6)}`;
     const strike = parseInt(strikeRaw, 10) / 1000;
     const mid = (o.bid + o.ask) / 2;
-    if (!(mid > 0) || !isFinite(o.delta)) continue;
+    // bid=0 表示无买盘,mid 不可靠,剔除
+    if (!(o.bid > 0) || !(mid > 0) || !isFinite(o.delta)) continue;
     if (!byExpiry.has(iso)) byExpiry.set(iso, []);
     byExpiry.get(iso).push({
       type: cp,
@@ -131,25 +156,27 @@ function expiryLabel(iso) {
   return `${iso}(周${WEEKDAYS[d.getUTCDay()]} · ${dte} 天)`;
 }
 
+let loadSeq = 0;
+
 async function loadTicker(input) {
-  const symbol = input.trim().toUpperCase().replace(/[^A-Z0-9._^]/g, "");
+  const symbol = input.trim().toUpperCase().replace(/[^A-Z0-9._]/g, "");
   if (!symbol) return;
+  const seq = ++loadSeq; // 防止连续查询时慢的旧响应覆盖新结果
   el.ticker.value = symbol;
   el.loadBtn.disabled = true;
   setStatus(`正在加载 ${symbol} 的期权数据…`);
 
   try {
-    // 指数(如 SPX、VIX)在 Cboe 接口里以下划线开头,失败时自动重试
-    let json;
-    try {
-      json = await fetchJSON(`${CBOE_BASE}${encodeURIComponent(symbol)}.json`);
-    } catch (e) {
-      if (/^[A-Z]+$/.test(symbol)) {
-        json = await fetchJSON(`${CBOE_BASE}_${symbol}.json`);
-      } else {
-        throw e;
-      }
-    }
+    // 指数(如 SPX、VIX)在 Cboe 接口里以下划线开头;两种形式并发竞速,谁成功用谁
+    const candidates =
+      /^[A-Z]+$/.test(symbol) ? [symbol, `_${symbol}`] : [symbol];
+    const json = await Promise.any(
+      candidates.map((s) => fetchJSON(`${CBOE_BASE}${encodeURIComponent(s)}.json`))
+    ).catch((e) => {
+      throw e.errors ? e.errors[0] : e;
+    });
+
+    if (seq !== loadSeq) return;
 
     const d = json.data;
     const byExpiry = parseOptions(d.options);
@@ -187,13 +214,14 @@ async function loadTicker(input) {
     setStatus("");
     render();
   } catch (e) {
+    if (seq !== loadSeq) return;
     console.error(e);
-    setStatus(
-      `加载 ${symbol} 失败:${e.message || e}。请确认代码正确(仅支持有美股期权的标的),稍后再试。`,
-      true
-    );
+    const reason = /HTTP 4\d\d/.test(e.message)
+      ? "未找到该代码的期权数据,请确认是有美股期权的标的"
+      : `${e.message || e},稍后再试`;
+    setStatus(`加载 ${symbol} 失败:${reason}。`, true);
   } finally {
-    el.loadBtn.disabled = false;
+    if (seq === loadSeq) el.loadBtn.disabled = false;
   }
 }
 
@@ -220,6 +248,32 @@ function buildSeries(options, type, lo, hi) {
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
+
+// 在图上画一条「现价」竖虚线,方便定位平值位置
+const spotLinePlugin = {
+  id: "spotLine",
+  afterDatasetsDraw(c) {
+    const spot = c.config.options.spotPrice;
+    const { ctx, chartArea, scales } = c;
+    if (!spot || spot < scales.x.min || spot > scales.x.max) return;
+    const x = scales.x.getPixelForValue(spot);
+    ctx.save();
+    ctx.strokeStyle = cssVar("--muted");
+    ctx.setLineDash([5, 5]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, chartArea.top);
+    ctx.lineTo(x, chartArea.bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = cssVar("--muted");
+    ctx.font = "11px -apple-system, sans-serif";
+    ctx.textAlign = x > (chartArea.left + chartArea.right) / 2 ? "right" : "left";
+    const pad = ctx.textAlign === "right" ? -6 : 6;
+    ctx.fillText(`现价 $${spot.toLocaleString("en-US", { maximumFractionDigits: 2 })}`, x + pad, chartArea.top + 12);
+    ctx.restore();
+  },
+};
 
 function render() {
   if (!state) return;
@@ -269,7 +323,9 @@ function render() {
   const config = {
     type: "line",
     data,
+    plugins: [spotLinePlugin],
     options: {
+      spotPrice: state.spot,
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: "nearest", intersect: false },
@@ -283,7 +339,7 @@ function render() {
             label: (item) => {
               const p = item.raw;
               return [
-                `${item.dataset.label.slice(0, 4).trim()} 杠杆 ≈ ${p.y.toFixed(1)}×`,
+                `${item.dataset.label.match(/^\w+/)[0]} 杠杆 ≈ ${p.y.toFixed(1)}×`,
                 `中间价 $${p.mid.toFixed(2)} · Δ ${p.delta.toFixed(3)}`,
                 p.iv > 0 ? `IV ${(p.iv * 100).toFixed(1)}%` : null,
               ].filter(Boolean);

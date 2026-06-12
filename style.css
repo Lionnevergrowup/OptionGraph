@@ -164,7 +164,7 @@ button {
 
 .foot { color: var(--muted); font-size: 0.78rem; text-align: center; line-height: 1.6; }
 .foot a { color: var(--accent); text-decoration: none; }
-.foot p { margin: 4px 0; }
+.foot p { margin: 4px 0; text-wrap: balance; }
 
 @media (max-width: 480px) {
   .hero h1 { font-size: 1.6rem; }
