@@ -12,6 +12,10 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+  <script>
+    // jsDelivr 在部分网络环境不可达时退到 unpkg
+    window.Chart || document.write('<script src="https://unpkg.com/chart.js@4.4.9/dist/chart.umd.min.js"><\/script>');
+  </script>
 </head>
 <body>
   <main class="container">
@@ -55,7 +59,7 @@
       </div>
     </section>
 
-    <section id="status" class="status" hidden></section>
+    <section id="status" class="status" hidden aria-live="polite"></section>
 
     <section id="quote" class="card quote" hidden>
       <div class="quote-main">

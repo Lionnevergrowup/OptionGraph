@@ -11,7 +11,8 @@
 
 [Cboe 免费延迟行情 API](https://www.cboe.com/delayed_quotes/)(真实市场数据,约延迟 15 分钟),
 包含 bid/ask 与希腊字母(Delta、IV 等),无需 API key。
-由于 Cboe 接口不带 CORS 头,前端会依次尝试直连和多个公共 CORS 代理。
+由于 Cboe 接口不带 CORS 头,前端经公共 CORS 代理中转:直连与
+corsproxy.io(Range 分块绕过其 1MB 上限)竞速,失败再退到备用代理。
 
 ## 部署
 

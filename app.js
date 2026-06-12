@@ -140,8 +140,8 @@ function parseOptions(raw) {
     const iso = `20${ymd.slice(0, 2)}-${ymd.slice(2, 4)}-${ymd.slice(4, 6)}`;
     const strike = parseInt(strikeRaw, 10) / 1000;
     const mid = (o.bid + o.ask) / 2;
-    // bid=0 表示无买盘,mid 不可靠,剔除
-    if (!(o.bid > 0) || !(mid > 0) || !isFinite(o.delta)) continue;
+    // bid=0(无买盘)或买卖价倒挂的报价不可靠,剔除
+    if (!(o.bid > 0) || !(o.ask >= o.bid) || !isFinite(o.delta)) continue;
     if (!byExpiry.has(iso)) byExpiry.set(iso, []);
     byExpiry.get(iso).push({
       type: cp,
@@ -155,10 +155,12 @@ function parseOptions(raw) {
   return byExpiry;
 }
 
+// 期权按美东日历日到期;亚洲用户在美股盘中本地日期可能已是“翌日”,
+// 若按本地日期算,当日到期的合约会被误判为已过期,故一律取美东日期
+const ET_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+
 function daysToExpiry(iso) {
-  const now = new Date();
-  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round((Date.parse(iso) - today) / 86400000);
+  return Math.round((Date.parse(iso) - Date.parse(ET_DATE.format(new Date()))) / 86400000);
 }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -176,28 +178,25 @@ async function loadTicker(input) {
   if (!symbol) return;
   const seq = ++loadSeq; // 防止连续查询时慢的旧响应覆盖新结果
   el.ticker.value = symbol;
+  el.ticker.blur(); // 收起手机键盘,把屏幕留给图表
   el.loadBtn.disabled = true;
   setStatus(`正在加载 ${symbol} 的期权数据…`);
 
   try {
-    // 指数(如 SPX、VIX)在 Cboe 接口里以下划线开头;指数形式延迟半拍起跑,
-    // 既不拖慢个股查询,也避免每次查询都翻倍消耗代理配额
+    // 指数(如 SPX、VIX)在 Cboe 接口里以下划线开头;先按原样查,
+    // 失败且为纯字母代码时再试指数形式,个股查询不浪费代理配额
     const tryForm = (s) => fetchJSON(`${CBOE_BASE}${encodeURIComponent(s)}.json`);
-    const attempts = [tryForm(symbol)];
-    if (/^[A-Z]+$/.test(symbol)) {
-      attempts.push(
-        new Promise((r) => setTimeout(r, 350)).then(() => tryForm(`_${symbol}`))
-      );
-    }
-    const json = await Promise.any(attempts).catch((e) => {
-      throw e.errors ? e.errors[0] : e;
+    const json = await tryForm(symbol).catch((e) => {
+      if (/^[A-Z]+$/.test(symbol)) return tryForm(`_${symbol}`);
+      throw e;
     });
 
     if (seq !== loadSeq) return;
 
     const d = json.data;
     const byExpiry = parseOptions(d.options);
-    if (byExpiry.size === 0) throw new Error("该代码没有可用的期权报价");
+    const expiries = [...byExpiry.keys()].sort().filter((e) => daysToExpiry(e) >= 0);
+    if (expiries.length === 0) throw new Error("该代码没有可用的期权报价");
 
     state = {
       symbol: d.symbol.replace(/^_/, ""),
@@ -217,7 +216,6 @@ async function loadTicker(input) {
     el.quote.hidden = false;
 
     // 到期日下拉框,默认选最近一个 ≥7 天的到期日
-    const expiries = [...byExpiry.keys()].sort().filter((e) => daysToExpiry(e) >= 0);
     el.expiry.innerHTML = "";
     for (const iso of expiries) {
       const opt = document.createElement("option");
@@ -296,6 +294,10 @@ const spotLinePlugin = {
 
 function render() {
   if (!state) return;
+  if (typeof Chart === "undefined") {
+    setStatus("图表库加载失败,请检查网络后刷新页面。", true);
+    return;
+  }
   const iso = el.expiry.value;
   const options = state.byExpiry.get(iso);
   if (!options) return;
@@ -306,6 +308,12 @@ function render() {
 
   const calls = buildSeries(options, "C", lo, hi);
   const puts = buildSeries(options, "P", lo, hi);
+
+  if (!calls.length && !puts.length) {
+    setStatus("该到期日在所选行权价范围内没有有效报价,试试扩大行权价范围。");
+  } else if (!el.status.classList.contains("error")) {
+    setStatus("");
+  }
 
   el.chartTitle.textContent = `${state.symbol} · ${iso} 到期 · 杠杆倍数 vs 行权价`;
   el.chartCard.hidden = false;
@@ -354,7 +362,7 @@ function render() {
         },
         tooltip: {
           callbacks: {
-            title: (items) => `行权价 $${items[0].parsed.x}`,
+            title: (items) => `行权价 $${items[0].parsed.x.toLocaleString("en-US")}`,
             label: (item) => {
               const p = item.raw;
               return [
