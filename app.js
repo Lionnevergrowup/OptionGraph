@@ -64,11 +64,22 @@ const el = {
   qMeta: $("q-meta"),
   chartCard: $("chart-card"),
   chartTitle: $("chart-title"),
+  bestInfo: $("best-info"),
   canvas: $("chart"),
 };
 
 let state = null; // { symbol, spot, timestamp, byExpiry: Map<iso, option[]> }
 let chart = null;
+
+// 记住用户上次的选择(隐私模式下 localStorage 可能不可用,静默降级)
+const store = {
+  get(k) {
+    try { return localStorage.getItem(k); } catch { return null; }
+  },
+  set(k, v) {
+    try { localStorage.setItem(k, v); } catch {}
+  },
+};
 
 function setStatus(msg, isError = false) {
   el.status.hidden = !msg;
@@ -147,6 +158,8 @@ function parseOptions(raw) {
       type: cp,
       strike,
       mid,
+      bid: o.bid,
+      ask: o.ask,
       delta: o.delta,
       iv: o.iv,
       oi: o.open_interest,
@@ -243,7 +256,7 @@ async function loadTicker(input) {
       : `数据时间 ${ts.toLocaleString("zh-CN", { hour12: false })}(本地时间,延迟约 15 分钟)`;
     el.quote.hidden = false;
 
-    // 到期日下拉框,默认选最近一个 ≥7 天的到期日
+    // 到期日下拉框;优先用上次手选的到期日,否则选最近一个 ≥7 天的
     el.expiry.innerHTML = "";
     for (const iso of expiries) {
       const opt = document.createElement("option");
@@ -251,7 +264,11 @@ async function loadTicker(input) {
       opt.textContent = expiryLabel(iso);
       el.expiry.appendChild(opt);
     }
-    el.expiry.value = expiries.find((e) => daysToExpiry(e) >= 7) || expiries[0];
+    const savedExpiry = store.get("og.expiry");
+    el.expiry.value =
+      (expiries.includes(savedExpiry) && savedExpiry) ||
+      expiries.find((e) => daysToExpiry(e) >= 7) ||
+      expiries[0];
     el.expiry.disabled = false;
 
     setStatus("");
@@ -289,12 +306,45 @@ function buildSeries(options, type, lo, hi) {
       mid: o.mid,
       delta: o.delta,
       iv: o.iv,
+      oi: o.oi,
+      spread: (o.ask - o.bid) / o.mid,
     }));
+}
+
+// 回报最高的点 = 杠杆最高的点(杠杆公式已偏好低价:期权越便宜杠杆越高)。
+// 但价差过宽或零持仓的报价实际成交不了,不参选;若全不达标则不标注
+function findBest(points) {
+  let best = null;
+  for (const p of points) {
+    if (p.spread > 0.6 || !(p.oi >= 1)) continue;
+    if (!best || p.y > best.y) best = p;
+  }
+  return best;
 }
 
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
+
+// 在最优回报点上方画一颗金色 ★
+const bestStarPlugin = {
+  id: "bestStar",
+  afterDatasetsDraw(c) {
+    const { ctx, chartArea } = c;
+    for (const m of c.config.options.bestMarks || []) {
+      const meta = c.getDatasetMeta(m.dsIdx);
+      if (meta.hidden) continue;
+      const pt = meta.data[m.idx];
+      if (!pt) continue;
+      ctx.save();
+      ctx.fillStyle = "#f59e0b";
+      ctx.font = "bold 13px -apple-system, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("★", pt.x, Math.max(pt.y - 10, chartArea.top + 12));
+      ctx.restore();
+    }
+  },
+};
 
 // 在图上画一条「现价」竖虚线,方便定位平值位置
 const spotLinePlugin = {
@@ -345,12 +395,40 @@ function render() {
     setStatus("");
   }
 
-  el.chartTitle.textContent = `${state.symbol} · ${iso} 到期 · 杠杆倍数 vs 行权价`;
+  el.chartTitle.textContent = `${state.symbol} · ${iso} 到期(剩 ${daysToExpiry(iso)} 天)· 杠杆倍数 vs 行权价`;
   el.chartCard.hidden = false;
+
+  // 标出 Call/Put 各自回报最高的点
+  const bestCall = findBest(calls);
+  const bestPut = findBest(puts);
+  for (const p of [...calls, ...puts]) p.best = false;
+  if (bestCall) bestCall.best = true;
+  if (bestPut) bestPut.best = true;
+  const bestMarks = [
+    bestCall && { dsIdx: 0, idx: calls.indexOf(bestCall) },
+    bestPut && { dsIdx: 1, idx: puts.indexOf(bestPut) },
+  ].filter(Boolean);
+
+  const fmt$ = (n) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  const bestText = (name, b) =>
+    b
+      ? `<span class="dot ${name.toLowerCase()}"></span>★ ${name} 最优:行权 ${fmt$(b.x)},期权价 ${fmt$(b.mid)},杠杆 ${b.y.toFixed(1)}×`
+      : "";
+  el.bestInfo.innerHTML = [bestText("Call", bestCall), bestText("Put", bestPut)]
+    .filter(Boolean)
+    .join("<br>");
+  el.bestInfo.hidden = !el.bestInfo.innerHTML;
 
   const text = cssVar("--text");
   const muted = cssVar("--muted");
   const border = cssVar("--border");
+  const GOLD = "#f59e0b";
+
+  const pointStyles = (color) => ({
+    pointRadius: (c) => (c.raw && c.raw.best ? 6 : 2.5),
+    pointBackgroundColor: (c) => (c.raw && c.raw.best ? GOLD : color),
+    pointBorderColor: (c) => (c.raw && c.raw.best ? GOLD : color),
+  });
 
   const data = {
     datasets: [
@@ -360,9 +438,9 @@ function render() {
         borderColor: "#2563eb",
         backgroundColor: "#2563eb",
         cubicInterpolationMode: "monotone",
-        pointRadius: 2.5,
         pointHoverRadius: 6,
         borderWidth: 2,
+        ...pointStyles("#2563eb"),
       },
       {
         label: "Put(股价 −1% → 期权 +x%)",
@@ -370,9 +448,9 @@ function render() {
         borderColor: "#e02424",
         backgroundColor: "#e02424",
         cubicInterpolationMode: "monotone",
-        pointRadius: 2.5,
         pointHoverRadius: 6,
         borderWidth: 2,
+        ...pointStyles("#e02424"),
       },
     ],
   };
@@ -380,9 +458,10 @@ function render() {
   const config = {
     type: "line",
     data,
-    plugins: [spotLinePlugin],
+    plugins: [spotLinePlugin, bestStarPlugin],
     options: {
       spotPrice: state.spot,
+      bestMarks,
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: "nearest", intersect: false },
@@ -399,6 +478,7 @@ function render() {
                 `${item.dataset.label.match(/^\w+/)[0]} 杠杆 ≈ ${p.y.toFixed(1)}×`,
                 `中间价 $${p.mid.toFixed(2)} · Δ ${p.delta.toFixed(3)}`,
                 p.iv > 0 ? `IV ${(p.iv * 100).toFixed(1)}%` : null,
+                p.best ? "★ 本范围内回报最高" : null,
               ].filter(Boolean);
             },
           },
@@ -435,8 +515,20 @@ el.chips.addEventListener("click", (e) => {
   const t = e.target.dataset?.t;
   if (t) loadTicker(t);
 });
-el.expiry.addEventListener("change", render);
-el.range.addEventListener("change", render);
+el.expiry.addEventListener("change", () => {
+  store.set("og.expiry", el.expiry.value);
+  render();
+});
+el.range.addEventListener("change", () => {
+  store.set("og.range", el.range.value);
+  render();
+});
+
+// 启动时恢复上次的行权价范围
+const savedRange = store.get("og.range");
+if (savedRange && [...el.range.options].some((o) => o.value === savedRange)) {
+  el.range.value = savedRange;
+}
 
 // 深色/浅色模式切换时重绘
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);

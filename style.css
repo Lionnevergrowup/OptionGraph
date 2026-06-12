@@ -159,6 +159,22 @@ button {
 .quote-meta { margin-top: 6px; color: var(--muted); font-size: 0.82rem; }
 
 .chart-card h2 { margin: 0 0 4px; font-size: 1.05rem; }
+.best-info {
+  margin: 2px 0 8px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.best-info .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+.best-info .dot.call { background: #2563eb; }
+.best-info .dot.put { background: #e02424; }
 .chart-wrap { position: relative; height: 46vh; min-height: 300px; max-height: 520px; }
 .hint { margin: 10px 0 0; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
