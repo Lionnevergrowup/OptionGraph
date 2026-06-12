@@ -295,6 +295,8 @@ function buildSeries(options, type, lo, hi) {
   for (const o of options) {
     if (o.type !== type || o.strike < lo || o.strike > hi) continue;
     if (Math.abs(o.delta) <= 0.0005) continue;
+    // 价差过宽(>中间价 60%)的报价没有参考价值,画出来只会让曲线锯齿交叠
+    if ((o.ask - o.bid) / o.mid > 0.6) continue;
     const cur = best.get(o.strike);
     if (!cur || o.oi > cur.oi) best.set(o.strike, o);
   }
@@ -304,22 +306,12 @@ function buildSeries(options, type, lo, hi) {
       x: o.strike,
       y: (state.spot / o.mid) * Math.abs(o.delta),
       mid: o.mid,
+      bid: o.bid,
+      ask: o.ask,
       delta: o.delta,
       iv: o.iv,
       oi: o.oi,
-      spread: (o.ask - o.bid) / o.mid,
     }));
-}
-
-// 回报最高的点 = 杠杆最高的点(杠杆公式已偏好低价:期权越便宜杠杆越高)。
-// 但价差过宽或零持仓的报价实际成交不了,不参选;若全不达标则不标注
-function findBest(points) {
-  let best = null;
-  for (const p of points) {
-    if (p.spread > 0.6 || !(p.oi >= 1)) continue;
-    if (!best || p.y > best.y) best = p;
-  }
-  return best;
 }
 
 function cssVar(name) {
@@ -387,35 +379,33 @@ function render() {
   const hi = state.spot * (1 + pct);
 
   const calls = buildSeries(options, "C", lo, hi);
-  const puts = buildSeries(options, "P", lo, hi);
 
-  if (!calls.length && !puts.length) {
+  if (!calls.length) {
     setStatus("该到期日在所选行权价范围内没有有效报价,试试扩大行权价范围。");
   } else if (!el.status.classList.contains("error")) {
     setStatus("");
   }
 
-  el.chartTitle.textContent = `${state.symbol} · ${iso} 到期(剩 ${daysToExpiry(iso)} 天)· 杠杆倍数 vs 行权价`;
+  el.chartTitle.textContent = `${state.symbol} · ${iso} 到期(剩 ${daysToExpiry(iso)} 天)· Call 杠杆倍数 vs 行权价`;
   el.chartCard.hidden = false;
 
-  // 标出 Call/Put 各自回报最高的点
-  const bestCall = findBest(calls);
-  const bestPut = findBest(puts);
-  for (const p of [...calls, ...puts]) p.best = false;
-  if (bestCall) bestCall.best = true;
-  if (bestPut) bestPut.best = true;
-  const bestMarks = [
-    bestCall && { dsIdx: 0, idx: calls.indexOf(bestCall) },
-    bestPut && { dsIdx: 1, idx: puts.indexOf(bestPut) },
-  ].filter(Boolean);
+  // 回报最高 = 杠杆最高(公式已把“价格低”计入:期权价在分母)。
+  // 列出前三名方便对比“价格高一点但倍数高不少”的取舍;零持仓的不参选
+  const top3 = calls
+    .filter((p) => p.oi >= 1)
+    .sort((a, b) => b.y - a.y)
+    .slice(0, 3);
+  for (const p of calls) p.best = false;
+  if (top3[0]) top3[0].best = true;
+  const bestMarks = top3[0] ? [{ dsIdx: 0, idx: calls.indexOf(top3[0]) }] : [];
 
   const fmt$ = (n) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-  const bestText = (name, b) =>
-    b
-      ? `<span class="dot ${name.toLowerCase()}"></span>★ ${name} 最优:行权 ${fmt$(b.x)},期权价 ${fmt$(b.mid)},杠杆 ${b.y.toFixed(1)}×`
-      : "";
-  el.bestInfo.innerHTML = [bestText("Call", bestCall), bestText("Put", bestPut)]
-    .filter(Boolean)
+  const RANK = ["★ 最优", "次优", "第三"];
+  el.bestInfo.innerHTML = top3
+    .map(
+      (p, i) =>
+        `<span class="${i === 0 ? "rank-top" : "rank"}">${RANK[i]}</span> 行权 ${fmt$(p.x)}:期权价 ${fmt$(p.mid)},杠杆 ${p.y.toFixed(1)}×`
+    )
     .join("<br>");
   el.bestInfo.hidden = !el.bestInfo.innerHTML;
 
@@ -424,33 +414,19 @@ function render() {
   const border = cssVar("--border");
   const GOLD = "#f59e0b";
 
-  const pointStyles = (color) => ({
-    pointRadius: (c) => (c.raw && c.raw.best ? 6 : 2.5),
-    pointBackgroundColor: (c) => (c.raw && c.raw.best ? GOLD : color),
-    pointBorderColor: (c) => (c.raw && c.raw.best ? GOLD : color),
-  });
-
   const data = {
     datasets: [
       {
-        label: "Call(股价 +1% → 期权 +x%)",
+        label: "Call(股价 +1% → 期权约 +杠杆%)",
         data: calls,
         borderColor: "#2563eb",
         backgroundColor: "#2563eb",
         cubicInterpolationMode: "monotone",
         pointHoverRadius: 6,
         borderWidth: 2,
-        ...pointStyles("#2563eb"),
-      },
-      {
-        label: "Put(股价 −1% → 期权 +x%)",
-        data: puts,
-        borderColor: "#e02424",
-        backgroundColor: "#e02424",
-        cubicInterpolationMode: "monotone",
-        pointHoverRadius: 6,
-        borderWidth: 2,
-        ...pointStyles("#e02424"),
+        pointRadius: (c) => (c.raw && c.raw.best ? 6 : 2.5),
+        pointBackgroundColor: (c) => (c.raw && c.raw.best ? GOLD : "#2563eb"),
+        pointBorderColor: (c) => (c.raw && c.raw.best ? GOLD : "#2563eb"),
       },
     ],
   };
@@ -475,9 +451,9 @@ function render() {
             label: (item) => {
               const p = item.raw;
               return [
-                `${item.dataset.label.match(/^\w+/)[0]} 杠杆 ≈ ${p.y.toFixed(1)}×`,
-                `中间价 $${p.mid.toFixed(2)} · Δ ${p.delta.toFixed(3)}`,
-                p.iv > 0 ? `IV ${(p.iv * 100).toFixed(1)}%` : null,
+                `杠杆 ≈ ${p.y.toFixed(1)}×(股价 +1% → 期权约 +${p.y.toFixed(1)}%)`,
+                `中间价 $${p.mid.toFixed(2)}(买 $${p.bid.toFixed(2)} / 卖 $${p.ask.toFixed(2)})`,
+                `Δ ${p.delta.toFixed(3)}` + (p.iv > 0 ? ` · IV ${(p.iv * 100).toFixed(1)}%` : ""),
                 p.best ? "★ 本范围内回报最高" : null,
               ].filter(Boolean);
             },

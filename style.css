@@ -165,16 +165,8 @@ button {
   color: var(--muted);
   line-height: 1.7;
 }
-.best-info .dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 5px;
-  vertical-align: 1px;
-}
-.best-info .dot.call { background: #2563eb; }
-.best-info .dot.put { background: #e02424; }
+.best-info .rank-top { color: #f59e0b; font-weight: 700; }
+.best-info .rank { color: var(--muted); font-weight: 600; }
 .chart-wrap { position: relative; height: 46vh; min-height: 300px; max-height: 520px; }
 .hint { margin: 10px 0 0; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
