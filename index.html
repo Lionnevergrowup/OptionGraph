@@ -14,7 +14,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
   <script>
     // jsDelivr 在部分网络环境不可达时退到 unpkg
-    window.Chart || document.write('<script src="https://unpkg.com/chart.js@4.4.9/dist/chart.umd.min.js"><\/script>');
+    // 注意:npm 包内真实文件名是 chart.umd.js(已压缩),.min.js 是 jsDelivr 自动生成的别名
+    window.Chart || document.write('<script src="https://unpkg.com/chart.js@4.4.9/dist/chart.umd.js"><\/script>');
   </script>
 </head>
 <body>
