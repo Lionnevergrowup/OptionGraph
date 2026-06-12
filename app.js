@@ -207,7 +207,10 @@ async function loadTicker(input) {
     // 失败且为纯字母代码时再试指数形式,个股查询不浪费代理配额
     const tryForm = (s) => fetchJSON(`${CBOE_BASE}${encodeURIComponent(s)}.json`);
     const json = await tryForm(symbol).catch((e) => {
-      if (/^[A-Z]+$/.test(symbol)) return tryForm(`_${symbol}`);
+      // 429 说明代理被限流而非代码形式不对,重试指数形式只会白等
+      if (/^[A-Z]+$/.test(symbol) && !/HTTP 429/.test(e.message)) {
+        return tryForm(`_${symbol}`);
+      }
       throw e;
     });
 
