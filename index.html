@@ -45,22 +45,6 @@
           <button class="chip" data-t="QQQ">QQQ</button>
         </div>
       </div>
-
-      <div class="field-grid">
-        <div class="field">
-          <label for="expiry">到期日 Expiration</label>
-          <select id="expiry" disabled><option>先查询股票代码</option></select>
-        </div>
-        <div class="field">
-          <label for="range">行权价范围</label>
-          <select id="range">
-            <option value="0.10">现价 ±10%</option>
-            <option value="0.25" selected>现价 ±25%</option>
-            <option value="0.50">现价 ±50%</option>
-            <option value="999">全部</option>
-          </select>
-        </div>
-      </div>
     </section>
 
     <section id="status" class="status" hidden aria-live="polite"></section>
@@ -77,6 +61,23 @@
     <section id="chart-card" class="card chart-card" hidden>
       <h2 id="chart-title"></h2>
       <p id="best-info" class="best-info" hidden></p>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="expiry">到期日 Expiration</label>
+          <select id="expiry" disabled><option>先查询股票代码</option></select>
+        </div>
+        <div class="field">
+          <label for="range">行权价范围</label>
+          <select id="range">
+            <option value="0.10">现价 ±10%</option>
+            <option value="0.25" selected>现价 ±25%</option>
+            <option value="0.50">现价 ±50%</option>
+            <option value="999">全部</option>
+          </select>
+        </div>
+      </div>
+
       <div class="chart-wrap">
         <canvas id="chart" role="img" aria-label="期权杠杆倍数与行权价的折线图"></canvas>
       </div>

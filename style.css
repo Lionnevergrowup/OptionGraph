@@ -78,6 +78,7 @@ body {
   gap: 12px;
 }
 .field-grid .field { margin-bottom: 0; }
+.chart-card .field-grid { margin-bottom: 14px; }
 
 .ticker-row { display: flex; gap: 10px; }
 
@@ -167,15 +168,6 @@ button {
 }
 .best-info .rank-top { color: #f59e0b; font-weight: 700; }
 .best-info .rank { color: var(--muted); font-weight: 600; }
-.linklike {
-  background: none;
-  padding: 0 2px;
-  margin-left: 4px;
-  color: var(--accent);
-  font-size: inherit;
-  font-weight: 600;
-  text-decoration: underline;
-}
 .chart-wrap { position: relative; height: 46vh; min-height: 300px; max-height: 520px; }
 .hint { margin: 10px 0 0; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
@@ -186,5 +178,7 @@ button {
 @media (max-width: 480px) {
   .hero h1 { font-size: 1.6rem; }
   .field-grid { grid-template-columns: 1fr; gap: 14px; }
+  /* 图表上方的两个选择器保持并排,避免把折线图挤下去 */
+  .chart-card .field-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   .card { padding: 15px; }
 }
