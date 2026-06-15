@@ -126,7 +126,9 @@ async function fetchCboe(cboeUrl) {
   if (kind !== "OK") throw fail("TRANSIENT", `HTTP ${first.status}`);
 
   let text = first.text;
-  if (text.length >= CHUNK) {
+  // 仅在拿到 206 分块响应时续传;若代理返回 200(整体响应)则已是完整内容,
+  // 再分块会重复追加导致 JSON 损坏
+  if (first.status === 206 && text.length >= CHUNK) {
     // 大链(如 SPX ≈14MB)续传,每批 3 块并行,上限 ~22MB
     let idx = 1;
     outer: for (let batch = 0; batch < 8; batch++) {
@@ -533,7 +535,12 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", ren
 
 // 网址直达:打开 …/#TSLA 自动查询;查询成功后把代码写回地址栏方便收藏
 function applyHash() {
-  const h = decodeURIComponent(location.hash.slice(1)).trim().toUpperCase();
+  let h = "";
+  try {
+    h = decodeURIComponent(location.hash.slice(1)).trim().toUpperCase();
+  } catch {
+    return; // 畸形 hash(如 #%)忽略
+  }
   if (h && (!state || h !== state.symbol)) loadTicker(h);
 }
 window.addEventListener("hashchange", applyHash);
