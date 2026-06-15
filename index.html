@@ -36,6 +36,7 @@
                  autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
           <button id="load-btn" type="button">查询</button>
         </div>
+        <div class="chips recent" id="recent-chips" hidden></div>
         <div class="chips" id="chips">
           <button class="chip" data-t="AAPL">AAPL</button>
           <button class="chip" data-t="TSLA">TSLA</button>
@@ -64,10 +65,6 @@
 
       <div class="field-grid">
         <div class="field">
-          <label for="expiry">到期日 Expiration</label>
-          <select id="expiry" disabled><option>先查询股票代码</option></select>
-        </div>
-        <div class="field">
           <label for="range">行权价范围</label>
           <select id="range">
             <option value="0.10">现价 ±10%</option>
@@ -76,12 +73,16 @@
             <option value="999">全部</option>
           </select>
         </div>
+        <div class="field">
+          <label for="expiry">到期日 Expiration</label>
+          <select id="expiry" disabled><option>先查询股票代码</option></select>
+        </div>
       </div>
 
       <div class="chart-wrap">
         <canvas id="chart" role="img" aria-label="期权杠杆倍数与行权价的折线图"></canvas>
       </div>
-      <p class="hint">触摸数据点查看明细 · 金色 ★ = 该范围内回报最高的 Call</p>
+      <p class="hint">点击曲线上的点,查看该行权价的期权价与杠杆明细</p>
     </section>
 
     <footer class="foot">
