@@ -45,6 +45,7 @@ const $ = (id) => document.getElementById(id);
 const el = {
   ticker: $("ticker"),
   loadBtn: $("load-btn"),
+  refreshBtn: $("refresh-btn"),
   chips: $("chips"),
   recentChips: $("recent-chips"),
   expiry: $("expiry"),
@@ -496,6 +497,21 @@ const onChipClick = (e) => {
 };
 el.chips.addEventListener("click", onChipClick);
 el.recentChips.addEventListener("click", onChipClick);
+
+// 刷新:iOS 主屏 App 没有浏览器刷新栏,重新拉取当前代码的最新数据;
+// 还没查过任何代码时,直接重载页面(也能顺带取到新版本)
+el.refreshBtn.addEventListener("click", async () => {
+  if (!state) {
+    location.reload();
+    return;
+  }
+  el.refreshBtn.classList.add("spin");
+  try {
+    await loadTicker(state.symbol);
+  } finally {
+    el.refreshBtn.classList.remove("spin");
+  }
+});
 el.expiry.addEventListener("change", () => {
   store.set("og.expiry", el.expiry.value);
   render();

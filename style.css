@@ -47,7 +47,24 @@ body {
   padding: 20px 16px 40px;
 }
 
-.hero { text-align: center; padding: 12px 0 20px; }
+.hero { text-align: center; padding: 12px 0 20px; position: relative; }
+.refresh-btn {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 1.25rem;
+  line-height: 1;
+  box-shadow: var(--shadow);
+}
+.refresh-btn:active { background: var(--border); }
+.refresh-btn.spin { animation: og-spin 0.7s linear infinite; }
+@keyframes og-spin { to { transform: rotate(360deg); } }
 .hero h1 { margin: 0; font-size: 1.9rem; letter-spacing: -0.02em; }
 .subtitle { margin: 8px 0 0; color: var(--muted); font-size: 0.95rem; }
 
