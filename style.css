@@ -95,7 +95,12 @@ body {
   gap: 12px;
 }
 .field-grid .field { margin-bottom: 0; }
-.chart-card .field-grid { margin-bottom: 14px; }
+/* 图表内的范围/到期日各占一行(范围在上、到期日在下) */
+.chart-card .field-grid {
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
 
 .ticker-row { display: flex; gap: 10px; }
 
@@ -199,7 +204,5 @@ button {
 @media (max-width: 480px) {
   .hero h1 { font-size: 1.6rem; }
   .field-grid { grid-template-columns: 1fr; gap: 14px; }
-  /* 图表上方的两个选择器保持并排,避免把折线图挤下去 */
-  .chart-card .field-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   .card { padding: 15px; }
 }
