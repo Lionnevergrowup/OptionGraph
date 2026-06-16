@@ -46,7 +46,6 @@ const el = {
   ticker: $("ticker"),
   loadBtn: $("load-btn"),
   refreshBtn: $("refresh-btn"),
-  chips: $("chips"),
   recentChips: $("recent-chips"),
   expiry: $("expiry"),
   range: $("range"),
@@ -81,7 +80,7 @@ function setStatus(msg, isError = false) {
   el.status.classList.toggle("error", isError);
 }
 
-const RECENTS_MAX = 12; // 上限约 4 行,避免无限增长
+const RECENTS_MAX = 20; // 上限约 5 行,超出时淘汰最久没查的
 
 function getRecents() {
   try {
@@ -93,20 +92,17 @@ function getRecents() {
 }
 
 function renderRecents() {
-  const presets = new Set(
-    [...el.chips.querySelectorAll("[data-t]")].map((b) => b.dataset.t)
-  );
-  // 已是预选的代码无需重复展示
-  const recents = getRecents().filter((s) => !presets.has(s));
+  // 存储按查询时间排序(便于淘汰最旧),展示按字母排序
+  const recents = [...getRecents()].sort();
   el.recentChips.innerHTML = recents
-    .map((s) => `<button class="chip recent" data-t="${s}">${s}</button>`)
+    .map((s) => `<button class="chip" data-t="${s}">${s}</button>`)
     .join("");
   el.recentChips.hidden = recents.length === 0;
 }
 
 function pushRecent(sym) {
   const r = getRecents().filter((x) => x !== sym);
-  r.unshift(sym);
+  r.unshift(sym); // 最新的放最前,裁剪时保留最近 RECENTS_MAX 个
   store.set("og.recents", JSON.stringify(r.slice(0, RECENTS_MAX)));
   renderRecents();
 }
@@ -240,7 +236,7 @@ async function loadTicker(input) {
     setStatus(
       input.trim()
         ? "请输入有效的美股代码(英文字母,如 AAPL)。"
-        : "请先输入股票代码,或点击下方的快捷标签。",
+        : "请先输入股票代码,例如 AAPL。",
       true
     );
     return;
@@ -423,10 +419,23 @@ function render() {
   const data = {
     datasets: [
       {
-        label: "Call(股价 +1% → 期权约 +杠杆%)",
+        label: "杠杆倍数(左轴)",
         data: calls,
+        yAxisID: "y",
         borderColor: "#2563eb",
         backgroundColor: "#2563eb",
+        cubicInterpolationMode: "monotone",
+        pointRadius: 2.5,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+      },
+      {
+        label: "期权中间价(右轴)",
+        data: calls, // 同一组数据,y 取 mid 字段
+        parsing: { xAxisKey: "x", yAxisKey: "mid" },
+        yAxisID: "y1",
+        borderColor: "#f59e0b",
+        backgroundColor: "#f59e0b",
         cubicInterpolationMode: "monotone",
         pointRadius: 2.5,
         pointHoverRadius: 6,
@@ -474,9 +483,17 @@ function render() {
           grid: { color: border },
         },
         y: {
-          title: { display: true, text: "杠杆倍数(股价每变动1%,期权变动 x%)", color: muted },
-          ticks: { color: muted, callback: (v) => `${v}×` },
+          position: "left",
+          title: { display: true, text: "杠杆倍数(股价每涨1%,期权涨 x%)", color: "#2563eb" },
+          ticks: { color: "#2563eb", callback: (v) => `${v}×` },
           grid: { color: border },
+          beginAtZero: true,
+        },
+        y1: {
+          position: "right",
+          title: { display: true, text: "期权中间价 ($)", color: "#f59e0b" },
+          ticks: { color: "#f59e0b", callback: (v) => `$${v}` },
+          grid: { drawOnChartArea: false }, // 不画第二套网格线,避免与左轴重叠杂乱
           beginAtZero: true,
         },
       },
@@ -493,12 +510,10 @@ el.ticker.addEventListener("keydown", (e) => {
   // isComposing:输入法选字时的回车不算提交
   if (e.key === "Enter" && !e.isComposing) loadTicker(el.ticker.value);
 });
-const onChipClick = (e) => {
+el.recentChips.addEventListener("click", (e) => {
   const t = e.target.dataset?.t;
   if (t) loadTicker(t);
-};
-el.chips.addEventListener("click", onChipClick);
-el.recentChips.addEventListener("click", onChipClick);
+});
 
 // 刷新:iOS 主屏 App 没有浏览器刷新栏,重新拉取当前代码的最新数据;
 // 还没查过任何代码时,直接重载页面(也能顺带取到新版本)
