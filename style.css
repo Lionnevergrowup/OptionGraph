@@ -182,12 +182,13 @@ button {
 
 .chart-card h2 { margin: 0 0 4px; font-size: 1.05rem; }
 .best-info {
-  margin: 2px 0 8px;
-  font-size: 0.82rem;
-  color: var(--muted);
-  line-height: 1.7;
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.6;
+  text-align: center;
 }
-.best-info .rank-top { color: #f59e0b; font-weight: 700; }
+.best-info .rank-top { color: var(--accent); font-weight: 700; }
 .chart-wrap { position: relative; height: 46vh; min-height: 300px; max-height: 520px; }
 .hint { margin: 10px 0 0; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
