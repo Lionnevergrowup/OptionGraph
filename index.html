@@ -13,7 +13,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260616c">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
   <script>
     // jsDelivr 在部分网络环境不可达时退到 unpkg
@@ -75,7 +75,26 @@
         <canvas id="chart" role="img" aria-label="期权杠杆倍数与行权价的折线图"></canvas>
       </div>
       <p id="best-info" class="best-info" hidden></p>
-      <p class="hint">点击曲线上的点,查看该行权价的期权价与杠杆明细</p>
+      <p class="hint">点击曲线上的点,查看明细并可保存到收藏</p>
+    </section>
+
+    <section id="watchlist-card" class="card watchlist-card" hidden>
+      <h2>我的收藏</h2>
+      <div class="table-wrap">
+        <table class="watchlist">
+          <thead>
+            <tr>
+              <th>期权</th>
+              <th>保存日</th>
+              <th>买入<br>倍 / 价</th>
+              <th>现在<br>倍 / 价</th>
+              <th aria-label="删除"></th>
+            </tr>
+          </thead>
+          <tbody id="watchlist-body"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="watchlist-note">「现在」一列在打开页面或点刷新时更新</p>
     </section>
 
     <footer class="foot">
@@ -84,6 +103,6 @@
     </footer>
   </main>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20260616c"></script>
 </body>
 </html>

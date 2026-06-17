@@ -59,6 +59,8 @@ const el = {
   chartTitle: $("chart-title"),
   bestInfo: $("best-info"),
   canvas: $("chart"),
+  watchlistCard: $("watchlist-card"),
+  watchlistBody: $("watchlist-body"),
 };
 
 let state = null; // { symbol, spot, timestamp, byExpiry: Map<iso, option[]> }
@@ -111,6 +113,26 @@ function validate(text) {
   const json = JSON.parse(text);
   if (json && json.data && Array.isArray(json.data.options)) return json;
   throw new Error("数据格式异常");
+}
+
+// ── 收藏(watchlist)─────────────────────────────────────────────
+function getWatch() {
+  try {
+    const w = JSON.parse(store.get("og.watch") || "[]");
+    return Array.isArray(w) ? w : [];
+  } catch {
+    return [];
+  }
+}
+function setWatch(w) {
+  store.set("og.watch", JSON.stringify(w));
+}
+function watchKey(o) {
+  return `${o.symbol}|${o.expiry}|${o.strike}`;
+}
+function isSaved(o) {
+  const k = watchKey(o);
+  return getWatch().some((x) => watchKey(x) === k);
 }
 
 // 经代理分块拉取整条期权链;成功返回 JSON,失败抛带 code 的错误
@@ -348,14 +370,90 @@ function cssVar(name) {
 
 const fmt$ = (n) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
-// 点击曲线上的点时,在标题下显示该行权价的明细
+let tappedOption = null; // 当前点中的期权,供「保存」按钮使用
+
+// 点击曲线上的点时,在图表下方显示该行权价的明细,并提供保存按钮
 function showTappedPoint(p) {
+  tappedOption = {
+    symbol: state.symbol,
+    expiry: el.expiry.value,
+    strike: p.x,
+    buyLev: p.y,
+    buyPrice: p.mid,
+  };
+  const saved = isSaved(tappedOption);
   el.bestInfo.innerHTML =
-    `行权 <b>${fmt$(p.x)}</b> · 期权价 ${fmt$(p.mid)}` +
-    `(买 ${fmt$(p.bid)} / 卖 ${fmt$(p.ask)})· ` +
-    `杠杆 <b class="rank-top">${p.y.toFixed(1)}×</b>` +
-    (p.iv > 0 ? ` · IV ${(p.iv * 100).toFixed(1)}%` : "");
+    `<span>行权 <b>${fmt$(p.x)}</b> · 期权价 ${fmt$(p.mid)} · ` +
+    `杠杆 <b class="rank-top">${p.y.toFixed(1)}×</b></span>` +
+    `<button class="save-btn${saved ? " saved" : ""}" id="save-opt">${saved ? "✓ 已收藏" : "＋ 保存"}</button>`;
   el.bestInfo.hidden = false;
+}
+
+// 拉取某代码的当前链(供收藏的「现在」列计算);复用已加载的 state 省一次请求
+async function fetchChain(symbol) {
+  if (state && state.symbol === symbol) {
+    return { spot: state.spot, byExpiry: state.byExpiry };
+  }
+  const json = await fetchSymbol(symbol);
+  return { spot: json.data.current_price, byExpiry: parseOptions(json.data.options) };
+}
+
+// 在链中找匹配的 call,返回当前 {lev, price}
+function currentFor(chain, item) {
+  const arr = chain.byExpiry.get(item.expiry);
+  const o = arr && arr.find((x) => x.type === "C" && x.strike === item.strike);
+  if (!o) return null;
+  return { lev: (chain.spot / o.mid) * Math.abs(o.delta), price: o.mid };
+}
+
+let wlCurrent = {}; // watchKey -> {lev, price} | {err:true};仅内存,不持久化
+let wlRefreshing = false;
+
+function renderWatchlist() {
+  const w = getWatch();
+  el.watchlistCard.hidden = w.length === 0;
+  el.watchlistBody.innerHTML = w
+    .map((o, i) => {
+      const c = wlCurrent[watchKey(o)];
+      let cur;
+      if (!c) cur = "…";
+      else if (c.err) cur = "—";
+      else {
+        const cls = c.price > o.buyPrice ? "up" : c.price < o.buyPrice ? "down" : "";
+        cur = `<span class="num-lev">${c.lev.toFixed(1)}×</span><br><span class="num-price ${cls}">${fmt$(c.price)}</span>`;
+      }
+      return `<tr>
+        <td class="opt"><span class="opt-sym">${o.symbol}</span> $${o.strike}C<br><span class="opt-sub">${o.expiry}</span></td>
+        <td>${o.date}</td>
+        <td><span class="num-lev">${o.buyLev.toFixed(1)}×</span><br><span class="num-price">${fmt$(o.buyPrice)}</span></td>
+        <td>${cur}</td>
+        <td><button class="wl-del" data-i="${i}" aria-label="删除">×</button></td>
+      </tr>`;
+    })
+    .join("");
+}
+
+async function refreshWatchlistCurrent() {
+  const w = getWatch();
+  if (!w.length || wlRefreshing) return;
+  wlRefreshing = true;
+  try {
+    for (const sym of [...new Set(w.map((o) => o.symbol))]) {
+      let chain = null;
+      try {
+        chain = await fetchChain(sym);
+      } catch {
+        chain = null;
+      }
+      for (const o of getWatch()) {
+        if (o.symbol !== sym) continue;
+        wlCurrent[watchKey(o)] = (chain && currentFor(chain, o)) || { err: true };
+      }
+      renderWatchlist();
+    }
+  } finally {
+    wlRefreshing = false;
+  }
 }
 
 // 在图上画一条「现价」竖虚线,方便定位平值位置
@@ -515,19 +613,43 @@ el.recentChips.addEventListener("click", (e) => {
   if (t) loadTicker(t);
 });
 
-// 刷新:iOS 主屏 App 没有浏览器刷新栏,重新拉取当前代码的最新数据;
-// 还没查过任何代码时,直接重载页面(也能顺带取到新版本)
-el.refreshBtn.addEventListener("click", async () => {
-  if (!state) {
-    location.reload();
-    return;
-  }
+// 保存当前点中的期权到收藏
+el.bestInfo.addEventListener("click", (e) => {
+  if (e.target.id !== "save-opt" || !tappedOption) return;
+  const w = getWatch();
+  if (w.some((x) => watchKey(x) === watchKey(tappedOption))) return; // 已收藏
+  w.push({
+    symbol: tappedOption.symbol,
+    expiry: tappedOption.expiry,
+    strike: tappedOption.strike,
+    date: new Date().toLocaleDateString("en-CA"), // 本地日期
+    buyLev: tappedOption.buyLev,
+    buyPrice: tappedOption.buyPrice,
+  });
+  setWatch(w);
+  wlCurrent[watchKey(tappedOption)] = { lev: tappedOption.buyLev, price: tappedOption.buyPrice };
+  e.target.textContent = "✓ 已收藏";
+  e.target.classList.add("saved");
+  renderWatchlist();
+});
+
+// 删除收藏
+el.watchlistBody.addEventListener("click", (e) => {
+  const i = e.target.dataset?.i;
+  if (i === undefined) return;
+  const w = getWatch();
+  w.splice(+i, 1);
+  setWatch(w);
+  renderWatchlist();
+});
+
+// 刷新:iOS 主屏 App 没有浏览器刷新栏。必须整页重载才能拿到新版本代码,
+// 仅重新跑内存里的旧 JS(loadTicker)看不到任何新功能。带时间戳绕过缓存,
+// 用 hash 保留当前代码,重载后自动重新查询(数据也是最新的)。
+el.refreshBtn.addEventListener("click", () => {
   el.refreshBtn.classList.add("spin");
-  try {
-    await loadTicker(state.symbol);
-  } finally {
-    el.refreshBtn.classList.remove("spin");
-  }
+  const hash = state ? `#${state.symbol}` : location.hash;
+  location.replace(`${location.pathname}?t=${Date.now()}${hash}`);
 });
 el.expiry.addEventListener("change", () => {
   store.set("og.expiry", el.expiry.value);
@@ -544,6 +666,8 @@ if (savedRange && [...el.range.options].some((o) => o.value === savedRange)) {
   el.range.value = savedRange;
 }
 renderRecents();
+renderWatchlist();
+refreshWatchlistCurrent();
 
 // 深色/浅色模式切换时重绘
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
