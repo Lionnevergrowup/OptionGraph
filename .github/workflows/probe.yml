@@ -7,12 +7,19 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe CBOE from a GitHub runner
+      - name: Probe Yahoo and Nasdaq from a GitHub runner
         run: |
           UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-          for host in cdn-api.cboe.com cdn.cboe.com; do
-            for sym in AAPL TSLA ZZZZQQ; do
-              code=$(curl -sL -m 40 -A "$UA" -o /tmp/out.json -w "%{http_code} size=%{size_download}" "https://$host/api/global/delayed_quotes/options/$sym.json" || true)
-              echo "$host $sym -> $code | $(head -c 90 /tmp/out.json | tr '\n' ' ')"
-            done
+          echo "=== Yahoo (cookie + crumb) ==="
+          curl -s -m 30 -c /tmp/cj -A "$UA" -o /dev/null -w "fc.yahoo.com -> %{http_code}\n" https://fc.yahoo.com || true
+          CRUMB=$(curl -s -m 30 -b /tmp/cj -A "$UA" https://query1.finance.yahoo.com/v1/test/getcrumb || true)
+          echo "crumb: ${CRUMB:0:40}"
+          for sym in AAPL TSLA ZZZZQQ; do
+            code=$(curl -s -m 30 -b /tmp/cj -A "$UA" -o /tmp/y.json -w "%{http_code} size=%{size_download}" "https://query1.finance.yahoo.com/v7/finance/options/$sym?crumb=$CRUMB" || true)
+            echo "yahoo $sym -> $code | $(head -c 200 /tmp/y.json | tr '\n' ' ')"
+          done
+          echo "=== Nasdaq ==="
+          for sym in AAPL TSLA ZZZZQQ; do
+            code=$(curl -s -m 30 -A "$UA" -H "Accept: application/json, text/plain, */*" -H "Origin: https://www.nasdaq.com" -H "Referer: https://www.nasdaq.com/" -o /tmp/n.json -w "%{http_code} size=%{size_download}" "https://api.nasdaq.com/api/quote/$sym/option-chain?assetclass=stocks&limit=5&fromdate=2027-01-01&todate=2027-02-01&excode=oprac&callput=call&money=all&type=all" || true)
+            echo "nasdaq $sym -> $code | $(head -c 260 /tmp/n.json | tr '\n' ' ')"
           done
