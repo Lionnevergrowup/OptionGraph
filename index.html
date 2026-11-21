@@ -7,13 +7,13 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f6fb">
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e1320">
-  <meta name="description" content="期权杠杆可视化 — 股价每涨1%,期权价格涨百分之几">
+  <meta name="description" content="期权杠杆可视化 — 股价每涨1%,期权价格涨百分之几(免费缓存行情,非实时)">
   <title>OptionGraph · 期权杠杆可视化</title>
   <meta name="apple-mobile-web-app-title" content="OptionGraph">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="style.css?v=20260616c">
+  <link rel="stylesheet" href="style.css?v=20261121a">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
   <script>
     // jsDelivr 在部分网络环境不可达时退到 unpkg
@@ -24,6 +24,7 @@
 <body>
   <main class="container">
     <header class="hero">
+      <button id="settings-btn" class="refresh-btn settings-btn" type="button" aria-label="数据源设置" title="数据源设置">⚙</button>
       <button id="refresh-btn" class="refresh-btn" type="button" aria-label="刷新数据" title="刷新数据">↻</button>
       <h1>📈 OptionGraph</h1>
       <p class="subtitle">期权杠杆可视化 — 股价每涨 1%,期权价格涨多少 %</p>
@@ -39,6 +40,22 @@
         </div>
         <div class="chips" id="recent-chips" hidden></div>
       </div>
+    </section>
+
+    <section id="settings-card" class="card settings-card" hidden>
+      <h2>数据源设置</h2>
+      <p class="settings-note">
+        行情来自 <a href="https://www.marketdata.app/" target="_blank" rel="noopener">marketdata.app</a>。
+        在那里免费注册后复制 <b>API token</b> 粘贴到下面(免费版每天 100 次请求)。
+        token 只保存在这台设备的浏览器里,不会上传到任何地方。不设置 token 时只能查询 AAPL。
+      </p>
+      <div class="ticker-row">
+        <input type="text" id="token-input" placeholder="粘贴 token" autocomplete="off"
+               autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="done">
+        <button id="token-save" type="button">保存</button>
+      </div>
+      <p class="token-state" id="token-state"></p>
+      <button id="token-clear" class="link-btn" type="button" hidden>清除已保存的 token</button>
     </section>
 
     <section id="status" class="status" hidden aria-live="polite"></section>
@@ -99,10 +116,10 @@
 
     <footer class="foot">
       <p>杠杆倍数 ≈ 现价 ÷ 期权中间价 × Delta —— 股价每涨 1%,Call 价格约涨「杠杆」%</p>
-      <p>数据来源:<a href="https://www.cboe.com/delayed_quotes/" target="_blank" rel="noopener">Cboe 延迟行情</a>(约延迟 15 分钟)· 仅供参考,不构成投资建议</p>
+      <p>数据来源:<a href="https://www.marketdata.app/" target="_blank" rel="noopener">Market Data</a> 免费缓存行情(通常为最近一个收盘价,非实时)· 仅供参考,不构成投资建议</p>
     </footer>
   </main>
 
-  <script src="app.js?v=20260616c"></script>
+  <script src="app.js?v=20261121a"></script>
 </body>
 </html>

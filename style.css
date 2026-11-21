@@ -63,6 +63,7 @@ body {
   box-shadow: var(--shadow);
 }
 .refresh-btn:active { background: var(--border); }
+.settings-btn { right: auto; left: 0; font-size: 1.15rem; }
 .refresh-btn.spin { animation: og-spin 0.7s linear infinite; }
 @keyframes og-spin { to { transform: rotate(360deg); } }
 .hero h1 { margin: 0; font-size: 1.9rem; letter-spacing: -0.02em; }
@@ -118,6 +119,8 @@ input[type="text"], select {
 }
 input[type="text"]:focus, select:focus { border-color: var(--accent); }
 input[type="text"] { text-transform: uppercase; }
+/* token 区分大小写,不能被转成大写 */
+#token-input { text-transform: none; }
 
 select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7591' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
@@ -133,7 +136,7 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
-#load-btn {
+#load-btn, #token-save {
   flex: 0 0 auto;
   padding: 12px 22px;
   border-radius: 12px;
@@ -143,8 +146,8 @@ button {
   font-weight: 600;
   transition: background 0.15s;
 }
-#load-btn:active { background: var(--accent-press); }
-#load-btn:disabled { opacity: 0.55; cursor: wait; }
+#load-btn:active, #token-save:active { background: var(--accent-press); }
+#load-btn:disabled, #token-save:disabled { opacity: 0.55; cursor: wait; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .chip {
@@ -244,4 +247,18 @@ table.watchlist .down { color: var(--red); }
   .hero h1 { font-size: 1.6rem; }
   .field-grid { grid-template-columns: 1fr; gap: 14px; }
   .card { padding: 15px; }
+}
+
+/* 数据源设置面板 */
+.settings-card h2 { margin: 0 0 8px; font-size: 1.05rem; }
+.settings-note { margin: 0 0 12px; color: var(--muted); font-size: 0.82rem; line-height: 1.6; }
+.settings-note a { color: var(--accent); }
+.token-state { margin: 10px 0 0; color: var(--muted); font-size: 0.82rem; min-height: 1.2em; }
+.link-btn {
+  margin-top: 6px;
+  padding: 4px 0;
+  background: none;
+  color: var(--red);
+  font-size: 0.8rem;
+  text-decoration: underline;
 }
